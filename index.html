@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<title>three.js bonus task</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<style>
+		body {
+			font-family: Monospace;
+			background-color: #000;
+			margin: 0px;
+			overflow: hidden;
+		}
+
+		#info {
+			position: absolute;
+			color: #fff;
+			top: 0px;
+			width: 100%;
+			padding: 5px;
+			text-align: center;
+		}
+
+		a {
+			color: #fff;
+		}
+	</style>
+</head>
+
+<body>
+
+	<script src="./three.js"></script>
+	<script src="./js/controls/OrbitControls.js"></script>
+	<script src="./js/QuickHull.js"></script>
+	<script src="./js/geometries/ConvexGeometry.js"></script>
+	<script src="./js/Detector.js"></script>
+	<script src="js/libs/stats.min.js"></script>
+	<script type="text/javascript" src="./ThreeCSG.js"></script>
+	
+
+	<script>
+		if (!Detector.webgl) Detector.addGetWebGLMessage();
+		var group, camera, scene, renderer, controls, waterGeo, result;
+		var tick = 0;
+		init();
+		animate();
+		
+		function init() {
+			
+			scene = new THREE.Scene();
+			renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.shadowMapEnabled = true;
+			renderer.shadowMapType = THREE.PCFSoftShadowMap;
+			renderer.shadowMapDarkness = 0.5;
+
+			document.body.appendChild(renderer.domElement);
+			// camera
+			camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 5000);
+			camera.position.set(0, 80, 400);
+			camera.rotation.x = Math.PI / 6;
+			scene.add(camera);
+			// controls
+			controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+          	controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+          	//controls.dampingFactor = 0.25;
+          	controls.screenSpacePanning = false;
+			controls.minDistance = 20;
+			//controls.maxDistance = 50;
+			controls.maxPolarAngle = Math.PI / 2;
+			
+
+			// LIGHTS
+			scene.add(new THREE.AmbientLight(0x222222, 1));
+			
+			dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+			
+			dirLight.position.set(-100, 300, 100);
+			dirLight.castShadow = true;
+			dirLight.shadowMapType = THREE.PCFSoftShadowMap;
+			dirLight.shadowDarkness = .1;
+			dirLight.shadow.mapSize.width = 2048;
+			dirLight.shadow.mapSize.height = 2048;
+			var d = 1000;
+			dirLight.shadow.camera.left = -d;
+			dirLight.shadow.camera.right = d;
+			dirLight.shadow.camera.top = d;
+			dirLight.shadow.camera.bottom = -d;
+			dirLight.shadow.camera.far = 400;
+			//dirLight.shadow.bias = -0.0001;
+			scene.add(dirLight);
+			dirLightHeper = new THREE.DirectionalLightHelper(dirLight, 10);
+			scene.add(dirLightHeper);
+
+			var hemilight = new THREE.HemisphereLight(0xffffbb, 0xd1f0fc, 0.6);
+			scene.add(hemilight);
+
+			var globalGroup = new THREE.Group();
+
+			//create terrain with trees and mountains
+			globalGroup.add(createTerrain(10, 3));
+
+			//create clouds
+			cloudGroup = new THREE.Group();
+
+			var cloud = createCloud(10);
+
+			cloudGroup.add(cloud);
+			cloudGroup.position.y = 90 + Math.random() * 10 - 5;
+
+			globalGroup.add(cloudGroup);
+			scene.add(globalGroup);
+
+			//create sky
+			var skyGeo = new THREE.SphereBufferGeometry(2000, 32, 15);
+			var skyMat = new THREE.MeshLambertMaterial({
+				color: 0x90dcf9,
+				side: THREE.BackSide
+			});
+			var sky = new THREE.Mesh(skyGeo, skyMat);
+			scene.add(sky);
+
+			window.addEventListener('resize', onWindowResize, false);
+		}
+		
+		//create Tree
+		function createTree() {
+			var forest = new THREE.Group();
+
+			// trunk
+			var gTrunk = new THREE.CylinderGeometry(2, 3, 20, 5);
+			var mTrunk = new THREE.MeshLambertMaterial({ color: 0x77580e });
+			var trunk = new THREE.Mesh(gTrunk, mTrunk);
+			trunk.castShadow = true;
+			trunk.receiveShadow = true;
+
+			// green crown tree
+			var pointsCrown = new THREE.DodecahedronGeometry(14); //14 radius
+			for (var j = 0; j < pointsCrown.vertices.length; j++) {
+				pointsCrown.vertices[j].add(randomPoint().multiplyScalar(3)); // wiggle the points
+			}
+			var mCrown = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+			var gCrown = new THREE.ConvexGeometry(pointsCrown.vertices);
+			var crown = new THREE.Mesh(gCrown, mCrown);
+			crown.scale.set(1, 1.5, 1);
+			crown.position.y = 20;
+			crown.castShadow = true;
+			crown.receiveShadow = true;
+
+			//group trunk and crown
+			var tree = new THREE.Group();
+
+			tree.add(trunk);
+			tree.add(crown);
+
+			return tree;
+		}
+
+		function createCloud(number) {
+
+			// cloud
+			var clouds = new THREE.Group();
+			for (var k = 0; k < number; k++) {
+				var cloudGroup = new THREE.Group();
+				for (var i = 0; i < 3; i++) {
+					var pointsCloud = new THREE.DodecahedronGeometry(5, 2); //5 radius
+					for (var j = 0; j < pointsCloud.vertices.length; j++) {
+						pointsCloud.vertices[j].add(randomPoint().multiplyScalar(1)); // wiggle the points
+					}
+					var mCloud = new THREE.MeshLambertMaterial({
+						color: 0xffffff,
+						transparent: true,
+						opacity: 0.6
+					});
+					var gCloud = new THREE.ConvexGeometry(pointsCloud.vertices);
+					var cloud = new THREE.Mesh(gCloud, mCloud);
+					cloud.scale.set(1.5, 1, 1);
+					cloud.position.x = THREE.Math.randFloat(- 1, 1) * 6;
+					cloud.position.y = THREE.Math.randFloat(- 1, 1) * 2;
+					cloud.castShadow = true;
+					cloudGroup.add(cloud);
+				}
+
+				cloudGroup.position.x = THREE.Math.randFloat(- 1, 1) * 200;
+				cloudGroup.position.y = THREE.Math.randFloat(- 1, 1) * 10;
+				cloudGroup.position.z = THREE.Math.randFloat(- 1, 1) * 200;
+				clouds.add(cloudGroup);
+			}
+			//console.log(clouds.size);
+			return clouds;
+		}
+
+		function createMountain() {
+
+			var material = new THREE.MeshLambertMaterial({
+				color: 0xa99a9d,
+				flatShading: true,
+				wireframe: false,
+			});
+
+			var group = new THREE.Group();
+
+			var zeroVector = new THREE.Vector3();
+			var size = THREE.Math.randFloat(1, 2) * 100;
+			var height = THREE.Math.randFloat(0, 1) * 5;
+			var boxGeom = new THREE.PlaneGeometry(size, size, 8 + Math.floor(Math.random() * 3), 8 + Math.floor(Math.random() * 3));
+
+			for (var i = 0; i < boxGeom.vertices.length; i++) {
+
+				var vertex = boxGeom.vertices[i];
+				vertex.z = (-vertex.distanceTo(zeroVector) * .5) * height + 15 + Math.random() * 3 - 6;
+
+				vertex.y += Math.random() * 10 - 5;
+				vertex.x += Math.random() * 10 - 5;
+				vertex.z += Math.random() * 20 - 10;
+
+			}
+			boxGeom.computeFaceNormals();
+			boxGeom.computeVertexNormals();
+
+			var boxMesh = new THREE.Mesh(boxGeom, material);
+			var box = new THREE.Box3().setFromObject(boxMesh);
+			console.log(box);
+			boxMesh.position.y = THREE.Math.randFloat(0, 1) * 15 + 10;
+			boxMesh.rotation.x = -Math.PI / 2;
+			group.add(boxMesh);
+
+			group.traverse(function (object) { //lets iterate
+				if (object instanceof THREE.Mesh) {
+					object.castShadow = true;
+					object.receiveShadow = true;
+				}
+			});
+			return group;
+		}
+
+		function createTerrain(numberTrees, numberMountains) {
+
+			var env = new THREE.Group();
+
+			//create ocean
+			waterGeo = new THREE.BoxGeometry(1000, 100, 1000, 30, 10, 30);
+			for (var i = 0; i < waterGeo.vertices.length; i++) {
+				var vertex = waterGeo.vertices[i];
+				if (vertex.y > 0)
+					vertex.y += Math.random() * 4 - 2;
+				vertex.x += Math.random() * 5 - 2.5;
+				vertex.z += Math.random() * 5 - 2.5;
+
+				vertex.wave = Math.random() * 100;
+			}
+
+			waterGeo.computeFaceNormals();
+			waterGeo.computeVertexNormals();
+
+			 result = new THREE.Mesh(waterGeo, new THREE.MeshPhongMaterial({
+					color: 0x6092c1,
+					emissive: 0x000000,
+					specular: 0xa0dff7,
+					flatShading: true,
+					transparent: true,
+					opacity: 0.9}));
+
+			result.position.y = -105;
+			result.rotation.y = Math.PI/4;
+			result.receiveShadow = true;
+			env.add(result);
+
+			//create island
+			var islandGeo = new THREE.PlaneGeometry(700, 700, 30, 30);
+			var zeroVector = new THREE.Vector3();
+
+			var modVector;
+			// amount of higth steps
+			var modAmount = Math.floor(Math.random() * 6 + 1);
+			//array for relief modifications
+			var mods = [];
+
+			for (var j = 0; j < modAmount; j++) {
+				modVector = new THREE.Vector3(Math.random() * 350, Math.random() * 350, 0);
+				modVector.radius = Math.random() * 350;
+				modVector.dir = Math.random() - 0.5;
+				mods.push(modVector)
+			}
+
+			for (var i = 0; i < islandGeo.vertices.length; i++) {
+				var vertex = islandGeo.vertices[i];
+
+				//make variance hight of island
+				vertex.z = -vertex.distanceTo(zeroVector) * .18 + 15 + Math.random() * 10 - 5;
+
+				//make hills and valleys using relief modifications
+				for (var j = 0; j < mods.length; j++) {
+					var modVector = mods[j];
+
+					if (vertex.distanceTo(modVector) < modVector.radius)
+						vertex.z += vertex.distanceTo(modVector) / 2 * modVector.dir;
+				}
+			}
+
+			vertex.y += Math.random() * 20 - 10;
+			vertex.x += Math.random() * 20 - 10;
+
+			islandGeo.computeFaceNormals();
+			islandGeo.computeVertexNormals();
+
+			var tmpIsland = new ThreeBSP(islandGeo);
+			var gIslandForm = new THREE.CylinderGeometry(400, 350, 200, 30, 1);
+			var islandMesh = new THREE.Mesh(gIslandForm);
+			islandMesh.rotation.x = Math.PI / 2;
+			var islandBSP = new ThreeBSP(islandMesh);
+			var islandIntersect = tmpIsland.intersect(islandBSP);
+
+			var island = islandIntersect.toMesh(
+				new THREE.MeshLambertMaterial({
+					color: 0x9bb345,
+					emissive: 0x000000,
+					flatShading: true,
+					wireframe: false,
+				})
+			);
+
+			//create forest
+			var forest = new THREE.Group();
+
+			var index, indexM;
+			i = 0;
+			while (i < numberTrees) {
+
+				index = getRandomInt(0, islandGeo.vertices.length);
+
+				if (islandGeo.vertices[index].z > 0) {
+					var tree = createTree();
+					tree.position.x = islandGeo.vertices[index].x;
+					tree.position.y = islandGeo.vertices[index].z;
+					tree.position.z = -islandGeo.vertices[index].y;
+					forest.add(tree);
+					i++;
+				}
+			}
+
+			//create mountains
+			var mountains = new THREE.Group();
+			i = 0;
+			while (i < numberMountains) {
+
+				var mountain = createMountain();
+
+				mountain.position.x = Math.random() * 700 - 350;
+				mountain.position.z = Math.random() * 700 - 350;
+				mountains.add(mountain);
+				i++;
+			}
+			mountains.position.y = -35;
+			forest.position.y = -5;
+			island.rotation.x = -Math.PI / 2;
+			island.position.y = -15;
+			island.receiveShadow = true;
+			island.castShadow = true;
+
+			env.add(island);
+			env.add(forest);
+			env.add(mountains);
+			scene.add(env);
+		}
+
+		function getRandomInt(min, max) {
+			min = Math.ceil(min);
+			max = Math.floor(max);
+			return Math.floor(Math.random() * (max - min)) + min; //The maximum is exclusive and the minimum is inclusive
+		}
+
+		function randomPoint() {
+			return new THREE.Vector3(THREE.Math.randFloat(- 1, 1), THREE.Math.randFloat(- 1, 1), THREE.Math.randFloat(- 1, 1));
+		}
+		function onWindowResize() {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+		}
+// animate water
+		function animate() {
+			requestAnimationFrame(animate);
+          	controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+			render();
+			
+			tick++;
+			
+			if (waterGeo) {
+				for (var i = 0; i < waterGeo.vertices.length; i++) {
+					var vertex = waterGeo.vertices[i];
+					
+					if (vertex.y > 0) {
+						vertex.y += Math.sin(tick * .015 + vertex.wave) * 0.01;
+					}
+				}
+				waterGeo.verticesNeedUpdate = true;
+			}
+		}
+
+		//animate();
+		function render() {
+			renderer.render(scene, camera);
+		}
+	</script>
+
+</body>
+
+</html>
